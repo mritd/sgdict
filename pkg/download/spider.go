@@ -148,7 +148,7 @@ func downloadDict(baseDir string, data map[string]map[string]string) error {
 	for d, a := range data {
 		addrs := a
 		categoryDir := filepath.Join(baseDir, d)
-		err := mkdir(strings.TrimSpace(categoryDir))
+		err := mkdir(strings.Replace(categoryDir, " ", "", -1))
 		if err != nil {
 			return err
 		}
