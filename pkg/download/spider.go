@@ -10,7 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/text/width"
 
 	"github.com/PuerkitoBio/goquery"
 
@@ -28,7 +31,7 @@ const (
 func client() *resty.Client {
 	return resty.New().
 		SetLogger(logrus.StandardLogger()).
-		SetTimeout(3*time.Second).
+		SetTimeout(5*time.Second).
 		SetRetryCount(2).
 		SetRetryMaxWaitTime(3*time.Second).
 		SetHeader("User-Agent", UA)
@@ -142,13 +145,18 @@ func queryDictAddr(addr string) (map[string]string, error) {
 
 func downloadDict(baseDir string, data map[string]map[string]string) error {
 
+	var count, current int64
+	for _, v := range data {
+		count += int64(len(v))
+	}
+
 	var catWg sync.WaitGroup
 	catWg.Add(len(data))
 
 	for d, a := range data {
 		addrs := a
-		categoryDir := filepath.Join(baseDir, d)
-		err := mkdir(strings.Replace(categoryDir, " ", "", -1))
+		categoryDir := width.Narrow.String(strings.ReplaceAll(filepath.Join(baseDir, strings.ReplaceAll(d, "/", "_")), " ", ""))
+		err := mkdir(categoryDir)
 		if err != nil {
 			return err
 		}
@@ -157,16 +165,18 @@ func downloadDict(baseDir string, data map[string]map[string]string) error {
 			for n, a := range addrs {
 				resp, err := client().R().Get(a)
 				if err != nil {
-					logrus.Errorf("download dict [%s] failed: %s", n, err)
+					logrus.Errorf("[DownloadDict] %s download failed: %s", n, err)
 					return
 				}
-				logrus.Infof("download dict [%s]", n)
-				savePath := filepath.Join(categoryDir, n+".scel")
+				dictName := width.Narrow.String(strings.ReplaceAll(strings.ReplaceAll(n+".scel", " ", ""), "/", "_"))
+				savePath := filepath.Join(categoryDir, dictName)
 				err = ioutil.WriteFile(savePath, resp.Body(), 0644)
 				if err != nil {
-					logrus.Errorf("save dict [%s] failed: %s", savePath, err)
+					logrus.Errorf("[DownloadDict] save dict %s failed: %s", savePath, err)
 					return
 				}
+				logrus.Infof("[DownloadDict] %d/%d downloaded dict %s", current, count, dictName)
+				atomic.AddInt64(&current, 1)
 			}
 		}()
 
