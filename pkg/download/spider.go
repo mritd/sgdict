@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -90,51 +91,87 @@ func queryDictAddr(addr string) (map[string]string, error) {
 
 	logrus.Infof("[QueryDictAddr] %s page size: %d", addr, pageSize)
 
+	var wg sync.WaitGroup
+	wg.Add(pageSize)
+	resCh := make(chan [2]string)
+
 	for i := 1; i < pageSize+1; i++ {
-		pageAddr := fmt.Sprintf("%s/default/%d", addr, i)
-		logrus.Infof("[QueryDictAddr] request addr: %s", pageAddr)
-		resp, err := cli.R().Get(pageAddr)
-		if err != nil {
-			break
-		}
-		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(resp.Body()))
-		if err != nil {
-			logrus.Warnf("request page %s error: %s", pageAddr, err)
-			continue
-		}
-		doc.Find("#dict_detail_list > div").Each(func(i int, selection *goquery.Selection) {
-			name := selection.Find("div.dict_detail_title_block > div > a").Text()
-			href, ok := selection.Find("div.dict_detail_show > div.dict_dl_btn > a").Attr("href")
-			if !ok {
+		pageNum := i
+		go func() {
+			defer wg.Done()
+			pageAddr := fmt.Sprintf("%s/default/%d", addr, pageNum)
+			logrus.Debugf("[QueryDictAddr] request addr: %s", pageAddr)
+			resp, err := cli.R().Get(pageAddr)
+			if err != nil {
+				logrus.Errorf("[QueryDictAddr] request page [%s] error: %s", pageAddr, err)
 				return
 			}
-			data[name] = href
-		})
+			doc, err := goquery.NewDocumentFromReader(bytes.NewReader(resp.Body()))
+			if err != nil {
+				logrus.Errorf("[QueryDictAddr] parse page [%s] error: %s", pageAddr, err)
+				return
+			}
+			doc.Find("#dict_detail_list > div").Each(func(i int, selection *goquery.Selection) {
+				name := selection.Find("div.dict_detail_title_block > div > a").Text()
+				href, ok := selection.Find("div.dict_detail_show > div.dict_dl_btn > a").Attr("href")
+				if !ok {
+					return
+				}
+				resCh <- [2]string{name, href}
+			})
+		}()
 	}
+
+	go func() {
+		for {
+			select {
+			case res, ok := <-resCh:
+				if ok {
+					data[res[0]] = res[1]
+				} else {
+					break
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	close(resCh)
 	return data, nil
 }
 
 func downloadDict(baseDir string, data map[string]map[string]string) error {
-	for d, addrs := range data {
+
+	var catWg sync.WaitGroup
+	catWg.Add(len(data))
+
+	for d, a := range data {
+		addrs := a
 		categoryDir := filepath.Join(baseDir, d)
-		err := mkdir(categoryDir)
+		err := mkdir(strings.TrimSpace(categoryDir))
 		if err != nil {
 			return err
 		}
-		for n, l := range addrs {
-			resp, err := client().R().Get(l)
-			if err != nil {
-				logrus.Errorf("failed to download dict %s: %s", n, err)
-				continue
+		go func() {
+			defer catWg.Done()
+			for n, a := range addrs {
+				resp, err := client().R().Get(a)
+				if err != nil {
+					logrus.Errorf("download dict [%s] failed: %s", n, err)
+					return
+				}
+				logrus.Infof("download dict [%s]", n)
+				savePath := filepath.Join(categoryDir, n+".scel")
+				err = ioutil.WriteFile(savePath, resp.Body(), 0644)
+				if err != nil {
+					logrus.Errorf("save dict [%s] failed: %s", savePath, err)
+					return
+				}
 			}
-			savePath := filepath.Join(categoryDir, n+".scel")
-			err = ioutil.WriteFile(savePath, resp.Body(), 0644)
-			if err != nil {
-				logrus.Errorf("save dict [%s] failed: %s", savePath, err)
-				continue
-			}
-		}
+		}()
+
 	}
+	catWg.Wait()
 	return nil
 }
 
