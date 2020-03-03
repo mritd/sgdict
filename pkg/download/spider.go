@@ -185,6 +185,8 @@ func downloadDict(baseDir string, data map[string]map[string]string) error {
 				fName = strings.ReplaceAll(fName, "/", "_")
 				fName = strings.ReplaceAll(fName, "【", "[")
 				fName = strings.ReplaceAll(fName, "】", "]")
+				fName = strings.ReplaceAll(fName, "“", "\"")
+				fName = strings.ReplaceAll(fName, "”", "\"")
 				fName = width.Narrow.String(fName)
 				savePath := filepath.Join(categoryDir, fName)
 				err = ioutil.WriteFile(savePath, resp.Body(), 0644)
