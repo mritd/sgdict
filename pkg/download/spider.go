@@ -162,12 +162,16 @@ func downloadDict(baseDir string, data map[string]map[string]string) error {
 	catWg.Add(len(data))
 
 	for d, a := range data {
-		addrs := a
-		categoryDir := width.Narrow.String(strings.ReplaceAll(filepath.Join(baseDir, strings.ReplaceAll(d, "/", "_")), " ", ""))
+		cat := strings.ReplaceAll(d, "/", "_")
+		cat = strings.ReplaceAll(cat, " ", "")
+		cat = width.Narrow.String(cat)
+		categoryDir := filepath.Join(baseDir, cat)
 		err := mkdir(categoryDir)
 		if err != nil {
 			return err
 		}
+
+		addrs := a
 		go func() {
 			defer catWg.Done()
 			for n, a := range addrs {
@@ -176,14 +180,19 @@ func downloadDict(baseDir string, data map[string]map[string]string) error {
 					logrus.Errorf("[DownloadDict] %s download failed: %s", n, err)
 					return
 				}
-				dictName := width.Narrow.String(strings.ReplaceAll(strings.ReplaceAll(n+".scel", " ", ""), "/", "_"))
-				savePath := filepath.Join(categoryDir, dictName)
+				fName := n + ".scel"
+				fName = strings.ReplaceAll(fName, " ", "")
+				fName = strings.ReplaceAll(fName, "/", "_")
+				fName = strings.ReplaceAll(fName, "【", "[")
+				fName = strings.ReplaceAll(fName, "】", "]")
+				fName = width.Narrow.String(fName)
+				savePath := filepath.Join(categoryDir, fName)
 				err = ioutil.WriteFile(savePath, resp.Body(), 0644)
 				if err != nil {
 					logrus.Errorf("[DownloadDict] save dict %s failed: %s", savePath, err)
 					return
 				}
-				logrus.Infof("[DownloadDict] %d/%d downloaded dict %s", current, count, dictName)
+				logrus.Infof("[DownloadDict] %d/%d downloaded dict %s", current, count, fName)
 				atomic.AddInt64(&current, 1)
 			}
 		}()
