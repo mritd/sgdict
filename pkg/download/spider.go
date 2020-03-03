@@ -72,7 +72,7 @@ func queryMainCategory() (map[string]string, error) {
 	return data, nil
 }
 
-func queryDictAddr(addr string) (map[string]string, error) {
+func queryDictAddr(name, addr string) (map[string]string, error) {
 	data := make(map[string]string)
 
 	cli := client()
@@ -99,7 +99,7 @@ func queryDictAddr(addr string) (map[string]string, error) {
 		}
 	})
 
-	logrus.Infof("[QueryDictAddr] %s page size: %d", addr, pageSize)
+	logrus.Infof("[QueryDictAddr] %s: %s size: %d", name, addr, pageSize)
 
 	var wg sync.WaitGroup
 	wg.Add(pageSize)
@@ -229,7 +229,7 @@ func Run() {
 	}
 
 	for name, addr := range categories {
-		data, err := queryDictAddr(addr)
+		data, err := queryDictAddr(name, addr)
 		if err != nil {
 			logrus.Error(err)
 			continue
