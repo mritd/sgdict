@@ -28,12 +28,19 @@ const (
 	UA               = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.122 Safari/537.36"
 )
 
+var (
+	BaseDir          string
+	Timeout          time.Duration
+	RetryCount       int
+	RetryMaxWaitTime time.Duration
+)
+
 func client() *resty.Client {
 	return resty.New().
 		SetLogger(logrus.StandardLogger()).
-		SetTimeout(5*time.Second).
-		SetRetryCount(2).
-		SetRetryMaxWaitTime(3*time.Second).
+		SetTimeout(Timeout).
+		SetRetryCount(RetryCount).
+		SetRetryMaxWaitTime(RetryMaxWaitTime).
 		SetHeader("User-Agent", UA)
 }
 
@@ -145,7 +152,8 @@ func queryDictAddr(addr string) (map[string]string, error) {
 
 func downloadDict(baseDir string, data map[string]map[string]string) error {
 
-	var count, current int64
+	var current int64 = 1
+	var count int64
 	for _, v := range data {
 		count += int64(len(v))
 	}
@@ -204,7 +212,7 @@ func mkdir(dir string) error {
 	return nil
 }
 
-func Run(baseDir string) {
+func Run() {
 	downMap := make(map[string]map[string]string)
 	categories, err := queryMainCategory()
 	if err != nil {
@@ -220,7 +228,7 @@ func Run(baseDir string) {
 		downMap[name] = data
 	}
 
-	err = downloadDict(baseDir, downMap)
+	err = downloadDict(BaseDir, downMap)
 	if err != nil {
 		logrus.Fatal(err)
 	}
