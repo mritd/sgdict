@@ -23,7 +23,7 @@ func Convert() {
 		logrus.Fatalf("%s is not a dir", BaseDir)
 	}
 
-	var count int64
+	var count int
 	_ = filepath.Walk(BaseDir, func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
 			count++
@@ -32,7 +32,7 @@ func Convert() {
 	})
 
 	var wg sync.WaitGroup
-	wg.Add(int(count))
+	wg.Add(count)
 
 	pool, err := ants.NewPool(100, ants.WithPreAlloc(true))
 	if err != nil {
