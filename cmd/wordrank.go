@@ -18,7 +18,9 @@ var wordrankCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(wordrankCmd)
-	wordrankCmd.PersistentFlags().StringVar(&wordrank.BaseDir, "dir", "./dict", "rime dict dir")
+	wordrankCmd.PersistentFlags().StringVar(&wordrank.FilePath, "file", "", "rime dict file")
+	wordrankCmd.PersistentFlags().StringVar(&wordrank.Proxy, "proxy", "", "http client proxy")
+	wordrankCmd.PersistentFlags().IntVar(&wordrank.PoolSize, "poolsize", 5, "goroutine pool size")
 	wordrankCmd.PersistentFlags().DurationVar(&wordrank.Timeout, "timeout", 10*time.Second, "http client timeout")
 	wordrankCmd.PersistentFlags().IntVar(&wordrank.RetryCount, "retry", 5, "auto retry count")
 	wordrankCmd.PersistentFlags().DurationVar(&wordrank.RetryMaxWaitTime, "retrywaittime", 5*time.Second, "retry max wait time")

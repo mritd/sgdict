@@ -4,11 +4,10 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/panjf2000/ants/v2"
 	"github.com/sirupsen/logrus"
@@ -16,6 +15,9 @@ import (
 
 func queryBaiduRank(word string) (int, error) {
 
+	maxRetry := 3
+
+retry:
 	cli := client()
 	resp, err := cli.R().Get(fmt.Sprintf(BAIDU_API, word))
 	if err != nil {
@@ -25,7 +27,11 @@ func queryBaiduRank(word string) (int, error) {
 	rex, _ := regexp.Compile("百度为您找到相关结果约(.*)个")
 	res := rex.FindStringSubmatch(string(resp.Body()))
 	if len(res) != 2 {
-		return 0, fmt.Errorf("[BaiduWordRank] get word [%s] rank failed", word)
+		if maxRetry > 0 {
+			maxRetry--
+			goto retry
+		}
+		return 0, fmt.Errorf("[BaiduWordRank] get word [%s] rank failed: \n%s", word, string(resp.Body()))
 	}
 	rank, err := strconv.Atoi(strings.ReplaceAll(res[1], ",", ""))
 	if err != nil {
@@ -36,82 +42,94 @@ func queryBaiduRank(word string) (int, error) {
 }
 
 func BaiduWorkRank() {
-	info, err := os.Stat(BaseDir)
+	info, err := os.Stat(FilePath)
 	if err != nil {
 		logrus.Fatal(err)
 	}
-	if !info.IsDir() {
-		logrus.Fatalf("%s is not a dir", BaseDir)
+	if info.IsDir() {
+		logrus.Fatalf("%s is a dir", FilePath)
 	}
 
-	var count int
-	_ = filepath.Walk(BaseDir, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() {
-			count++
-		}
-		return nil
-	})
+	logrus.Infof("Pool size %d", PoolSize)
 
-	var wg sync.WaitGroup
-	wg.Add(count)
-
-	pool, err := ants.NewPool(100, ants.WithPreAlloc(true))
+	pool, err := ants.NewPool(PoolSize, ants.WithPreAlloc(true))
 	if err != nil {
 		logrus.Fatal(err)
 	}
 	defer pool.Release()
 
-	_ = filepath.Walk(BaseDir, func(path string, info os.FileInfo, err error) error {
+	src, err := os.Open(FilePath)
+	if err != nil {
+		logrus.Errorf("open file [%s] failed: %s", FilePath, err)
+		return
+	}
+	defer func() { _ = src.Close() }()
 
-		// skip dir
-		if info.IsDir() || strings.HasSuffix(path, ".rime") {
-			return nil
-		}
+	//wordMap := make(map[string][]string, 1000000)
+	wordCh := make(chan []string, 100)
+	//var keys []string
 
-		err = pool.Submit(func() {
-			defer wg.Done()
-
-			src, err := os.Open(path)
+	go func() {
+		br := bufio.NewReader(src)
+		for {
+			s, err := br.ReadString('\n')
 			if err != nil {
-				logrus.Errorf("processing file [%s] failed: %s", path, err)
-				return
+				break
 			}
-			defer func() { _ = src.Close() }()
-
-			dst, err := os.OpenFile(path+".rank", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
-			if err != nil {
-				logrus.Errorf("processing file [%s] failed: %s", path, err)
-				return
-			}
-			defer func() { _ = dst.Close() }()
-
-			br := bufio.NewReader(src)
-			for {
-				s, err := br.ReadString('\n')
-				if err != nil {
-					break
-				}
+			s = strings.TrimSpace(s)
+			_ = pool.Submit(func() {
 				ss := strings.Split(s, "\t")
 				if len(ss) != 3 {
-					break
+					logrus.Errorf("dict format error: %s", s)
+					return
 				}
+
 				rank, err := queryBaiduRank(ss[0])
 				if err != nil {
 					logrus.Error(err)
 				} else {
 					ss[2] = strconv.Itoa(rank)
 				}
+				wordCh <- ss
+				logrus.Infof("processed %s", ss)
+			})
+		}
+	}()
 
-				_, err = fmt.Fprintln(dst, strings.Join(ss, "\t"))
-				if err != nil {
-					logrus.Error(err)
-				}
+	outFile, err := os.OpenFile(FilePath+".rank", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+	defer func() { _ = outFile.Close() }()
+	for {
+		select {
+		case w := <-wordCh:
+			s := strings.Join(w, "\t")
+			_, err := fmt.Fprintln(outFile, strings.TrimSpace(s))
+			if err != nil {
+				logrus.Error(err)
 			}
+		case <-time.After(10 * time.Second):
+			close(wordCh)
+			goto done
+		}
+	}
 
-			logrus.Infof("[BaiduWorkRank] file %s processed", path)
+done:
 
-		})
+	//outFile, err := os.OpenFile(FilePath+".sort", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644)
+	//if err != nil {
+	//	logrus.Fatal(err)
+	//}
+	//defer func() { _ = outFile.Close() }()
+	//sort.Sort(pinyin.ByPinyin(keys))
+	//
+	//for _, k := range keys {
+	//	s := strings.Join(wordMap[k], "\t")
+	//	_, err := fmt.Fprintln(outFile, strings.TrimSpace(s))
+	//	if err != nil {
+	//		logrus.Error(err)
+	//	}
+	//}
 
-		return nil
-	})
 }
