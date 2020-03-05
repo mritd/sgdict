@@ -25,7 +25,7 @@ func queryBaiduRank(word string) (int, error) {
 	rex, _ := regexp.Compile("百度为您找到相关结果约(.*)个")
 	res := rex.FindStringSubmatch(string(resp.Body()))
 	if len(res) != 2 {
-		return 0, fmt.Errorf("[BaiduWordRank] get word rank failed")
+		return 0, fmt.Errorf("[BaiduWordRank] get word [%s] rank failed", word)
 	}
 	rank, err := strconv.Atoi(strings.ReplaceAll(res[1], ",", ""))
 	if err != nil {
@@ -64,7 +64,7 @@ func BaiduWorkRank() {
 	_ = filepath.Walk(BaseDir, func(path string, info os.FileInfo, err error) error {
 
 		// skip dir
-		if info.IsDir() {
+		if info.IsDir() || strings.HasSuffix(path, ".rime") {
 			return nil
 		}
 
